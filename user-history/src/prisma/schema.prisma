@@ -6,3 +6,11 @@ datasource db {
   url      = env("DATABASE_URL")
   provider = "postgresql"
 }
+
+model UserHistory {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  eventType     String   
+  eventDetails  Json     
+  createdAt     DateTime @default(now())
+}
