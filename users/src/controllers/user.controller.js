@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+const rabbitmq = require('../rabbitmq');
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -8,6 +10,9 @@ const createUser = async (req, res) => {
     const newUser = await prisma.user.create({
       data: req.body,
     });
+
+    rabbitmq.publishUserEvent('user.created', newUser.id, { user: newUser });
+
     res.status(201).json(newUser);
   } catch (error) {
     console.error(error);
@@ -23,6 +28,9 @@ const updateUser = async (req, res) => {
       where: { id: userId },
       data: userData,
     });
+
+    rabbitmq.publishUserEvent('user.updated', updatedUser.id, { user: updatedUser });
+
     res.status(200).json(updatedUser);
   } catch (error) {
     console.error(error);
