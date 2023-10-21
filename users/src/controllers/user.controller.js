@@ -1,51 +1,66 @@
 require('dotenv').config();
-
 const rabbitmq = require('../rabbitmq');
-
+const bcrypt = require('bcrypt');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { checkExistingUserByEmail, checkExistingUserById } = require('../utils/checkExistingUser');
+const { StatusCodes } = require('http-status-codes');
 
 const createUser = async (req, res) => {
-  try {
-    const newUser = await prisma.user.create({
-      data: req.body,
-    });
+  const existingUser = await checkExistingUserByEmail(req.body.email);
 
-    rabbitmq.publishUserEvent('user.created', newUser.id, { user: newUser });
-
-    res.status(201).json(newUser);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Could not create the user.' });
+  if (existingUser) {
+    return res.status(StatusCodes.CONFLICT).json({ error: 'User with this email already exists' });
   }
+
+  const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
+  const newUser = await prisma.user.create({
+    data: {
+      email: req.body.email,
+      password: hashedPassword,
+    },
+  });
+
+  rabbitmq.publishUserEvent('user.created', newUser.id, { user: newUser });
+
+  res.status(StatusCodes.CREATED).json(newUser);
 };
 
 const updateUser = async (req, res) => {
-  const userId = parseInt(req.params.userId, 10);
-  const userData = req.body;
-  try {
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: userData,
-    });
+  let userId = req.params.userId;
 
-    rabbitmq.publishUserEvent('user.updated', updatedUser.id, { user: updatedUser });
-
-    res.status(200).json(updatedUser);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Could not update the user.' });
+  if (!/^\d+$/.test(userId)) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ error: 'Invalid userId format' });
   }
+
+  userId = parseInt(userId, 10);
+
+  const userData = req.body;
+
+  const existingUser = await checkExistingUserById(userId);
+
+  if (!existingUser) {
+    return res.status(StatusCodes.NOT_FOUND).json({ error: 'User not found' });
+  }
+
+  if (userData.password) {
+    userData.password = await bcrypt.hash(userData.password, 10);
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: userData,
+  });
+
+  rabbitmq.publishUserEvent('user.updated', updatedUser.id, { user: updatedUser });
+
+  res.status(StatusCodes.OK).json(updatedUser);
 };
 
 const getAllUsers = async (req, res) => {
-  try {
-    const users = await prisma.user.findMany();
-    res.status(200).json(users);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Could not retrieve users.' });
-  }
+  const users = await prisma.user.findMany();
+  res.status(StatusCodes.OK).json(users);
 };
 
 module.exports = { createUser, updateUser, getAllUsers };

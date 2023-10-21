@@ -1,6 +1,5 @@
+require('dotenv').config();
 const amqp = require('amqplib');
-
-const RABBITMQ_URL = 'amqp://localhost';
 const channelName = 'user-events';
 
 class RabbitMQService {
@@ -10,7 +9,7 @@ class RabbitMQService {
   }
 
   async setup() {
-    this.connection = await amqp.connect(RABBITMQ_URL);
+    this.connection = await amqp.connect(process.env.RABBITMQ_URL);
     this.channel = await this.connection.createChannel();
 
     await this.channel.assertExchange(channelName, 'fanout', { durable: false });
@@ -29,6 +28,16 @@ class RabbitMQService {
 
     this.channel.publish(channelName, '', Buffer.from(JSON.stringify(userEvent)));
     console.log(`User event published: ${eventType}`);
+  }
+
+  async disconnect() {
+    if (this.channel) {
+      await this.channel.close();
+    }
+    if (this.connection) {
+      await this.connection.close();
+      console.log('RabbitMQ connection closed');
+    }
   }
 }
 
